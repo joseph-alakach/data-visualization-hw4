@@ -1,0 +1,231 @@
+---
+title: "Homework 4"
+author: "Joseph Alakach"
+---
+```{r}
+library(ggplot2)
+library(dplyr)
+```
+
+```{r}
+bundesliga <- read.csv("bundesliga.csv")
+bundesliga2 <- read.csv("bundesliga2.csv")
+
+bundesliga$DATE <- as.POSIXct(bundesliga$DATE, format = "%Y-%m-%d")
+```
+
+*** PART1 ***
+
+** 1 **
+```{r}
+group_season_data <- bundesliga %>%
+  group_by(SEASON) %>%
+  summarise(total_goals = sum(FTTG, na.rm = TRUE), average_goals_per_match = mean(FTTG, na.rm = TRUE))
+
+
+ggplot(group_season_data, aes(x= SEASON, y = total_goals)) +
+geom_bar(stat = "identity") +
+labs(Title = "Total goals per season", x = "season", y = "total number of goals") +
+coord_cartesian(ylim = c(800, 1000))
+```
+```{r}
+ggplot(group_season_data, aes(x= SEASON, y = average_goals_per_match)) +
+geom_bar(stat = "identity") +
+labs(Title = "Average match goals per season", x = "Time Stamp", y = "Average match goals") +
+coord_cartesian(ylim = c(2, 4))
+```
+
+
+** 2 **
+```{r}
+group_season_data <- group_season_data %>%
+  mutate(threshold = case_when(
+    average_goals_per_match <= 2.5 ~ "under",
+    TRUE ~ "over"
+  ))
+
+ggplot(group_season_data, aes(x= SEASON, y = average_goals_per_match, fill = threshold)) +
+geom_bar(stat = "identity") +
+labs(Title = "Average match goals per season", x = "Time Stamp", y = "Average match goals") +
+coord_cartesian(ylim = c(2, 4))
+```
+
+
+** 3 **
+```{r}
+seasons <- unique(bundesliga2$SEASON)
+pdf(file = "Teams per season scored goals.pdf")
+for (season in seasons) {
+  season_data <- bundesliga %>%
+    filter(SEASON == season)
+
+  season_teams <- unique(c(season_data$HOMETEAM, season_data$AWAYTEAM))
+  for (team in season_teams) {
+    season_team_data <- season_data %>%
+      filter(HOMETEAM == team | AWAYTEAM == team)
+
+    team_goals_per_match <- season_team_data %>%
+      mutate(Match = row_number(),Team = team, Goals = ifelse(HOMETEAM == team, FTHG, FTAG)) %>%
+          select(Team, Goals, Match)
+
+    color <- ifelse(team == "Bayern Munich", "red", "gray")
+    print(ggplot(team_goals_per_match, aes(x=Match, y = Goals)) +
+      geom_line(color = color) +
+      labs(
+        title = paste(team,"goals per Match ", "in Season", season), x = "Match Number", y = "Goals") +
+      theme_minimal())
+  }
+}
+dev.off()
+```
+
+
+
+*** PART 2 ***
+
+** 1 **
+```{r}
+wins <- bundesliga %>%
+  mutate(
+    TEAM = case_when(
+      FTHG > FTAG ~ HOMETEAM,
+      FTAG > FTHG ~ AWAYTEAM,
+      TRUE ~ NA_character_
+    ),
+    win_place = case_when(
+      FTHG > FTAG ~ "Home",
+      FTAG > FTHG ~ "Away",
+      TRUE ~ NA_character_
+    )) %>%
+  filter(!is.na(TEAM)) %>%
+  group_by(SEASON, TEAM, win_place) %>%
+  summarise(wins = n(), .groups = "drop")
+
+wins <- wins %>%
+  group_by(SEASON, TEAM) %>%
+  summarise(Diff = sum(ifelse(win_place == "Home", wins, -wins)), .groups = "drop")
+
+
+
+ggplot(wins, aes(x = SEASON, y = TEAM, fill = Diff)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", mid = "purple", high = "red", midpoint = 0) +
+  scale_x_continuous(breaks=wins$SEASON) +
+  labs(title = "Home vs Away Win Difference per Team per Season", x = "Season", y = "Team", fill = "Home - Away Wins") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90))
+
+```
+Here the negative value means that the team have won more in away games, and the positive value means that the team has won more in home games
+
+
+** PART 3 **
+
+** 1 **
+```{r}
+top6_counts <- bundesliga2 %>%
+  filter(POSITION <= 6) %>%
+  group_by(TEAM) %>%
+  summarise(top6_finishes = n(), .groups = "drop") %>%
+  arrange(desc(top6_finishes))
+
+top_6_teams <- top6_counts[c(1:6), c(0:1)]$TEAM
+
+
+filtere_bundesliga2_top_6_teams <- bundesliga2 %>%
+        filter(TEAM %in% top_6_teams )
+
+title_wins <- filtere_bundesliga2_top_6_teams %>%
+  filter(POSITION == 1)
+
+
+ggplot(filtere_bundesliga2_top_6_teams, aes(x = SEASON, y = POSITION, color = TEAM)) +
+  geom_line(size = 1) +
+  geom_point(data = title_wins, aes(x = SEASON, y = POSITION), color = "red" ,size=5) +
+  scale_y_reverse(breaks = 1:18) +
+  labs(title = "Seasonal Rank Trajectories of Top 6 Teams")
+
+```
+
+
+** 2 **
+```{r}
+teams_volatility <- bundesliga2 %>%
+  group_by(TEAM) %>%
+  summarise(volatility = sd(POSITION, na.rm = TRUE),.groups = "drop")
+
+ggplot(teams_volatility, aes(x = TEAM, y = volatility, fill = volatility)) +
+  geom_col() +
+  scale_fill_gradient(low = "green", high = "red") +
+  geom_text(aes(label = volatility)) +
+  labs(title = "Team Volatility Standard Deviation of Season Rank", x = "Team", y = "Volatility", fill = "Volatility") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+
+*** PART4 ***
+```{r}
+rivalries <- c(
+  "Bayern Munich - Dortmund",
+  "Dortmund - Schalke 04",
+  "Bayern Munich - M'Gladbach",
+  "M'Gladbach - FC Koln",
+  "Werder Bremen - Hamburg"
+)
+
+bundesliga_rivals <- bundesliga %>%
+  mutate(
+    Rivalry = case_when(
+      paste(HOMETEAM, "-", AWAYTEAM) %in% rivalries ~ paste(HOMETEAM, "-", AWAYTEAM),
+      paste(AWAYTEAM, "-", HOMETEAM) %in% rivalries ~ paste(AWAYTEAM, "-", HOMETEAM),
+      TRUE ~ NA_character_
+    ),
+    Result = case_when(
+      FTHG > FTAG ~ HOMETEAM,
+      FTHG < FTAG ~ AWAYTEAM,
+      FTHG == FTAG ~ "Draw"
+    ),
+  ) %>%
+  filter(!is.na(Rivalry)) %>%
+        select(Rivalry, Result) %>%
+        group_by(Rivalry, Result) %>%
+        summarise(Count = n(), .groups = "drop")
+
+
+
+
+ggplot(bundesliga_rivals, aes(x = Result, y = Count, fill = Result)) +
+  geom_col() +
+  facet_wrap(~Rivalry, scales = "free_x") +
+  labs(title = "Win Draw per Rivalry", x = "Match Result", y = "Count") +
+  theme_minimal()
+
+
+
+
+```
+
+
+*** PART5 ***
+```{r}
+bundesliga_plus_winner <- bundesliga2 %>%
+        mutate(winner = POSITION == 1)
+
+seasons <- unique(bundesliga2$SEASON)
+pdf(file = "Teams per season points.pdf")
+for (season in seasons) {
+  season_data <- bundesliga_plus_winner %>%
+    filter(SEASON == season)
+
+
+  print(ggplot(season_data, aes(x=POINTS, y = TEAM , fill = winner)) +
+    geom_bar(stat = "identity") +
+    labs(
+      title = paste("Season", season," points"), x = "Points", y = "Teams") +
+    theme_minimal())
+
+}
+dev.off()
+```
+
